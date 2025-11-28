@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compressão de Imagens - iLoveAPI</title>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f7f9;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: #e53935; /* Cor da iLove */
+        }
+
+        main {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .input-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        #imageFiles {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        button {
+            background-color: #e53935;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #d32f2f;
+        }
+
+        .status {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            text-align: center;
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border-color: #c3e6cb;
+        }
+
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border-color: #f5c6cb;
+        }
+
+        .results-container {
+            margin-top: 20px;
+            padding: 15px;
+            border-top: 1px solid #eee;
+        }
+
+        .results-container p {
+            font-weight: bold;
+            color: #2e7d32;
+        }
+
+        .results-container a {
+            display: block;
+            margin-top: 5px;
+            color: #1565c0;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>🖼️ iLoveAPI Image Compressor</h1>
+        <p>Selecione um lote de imagens para comprimir (nível de qualidade ~50%).</p>
+    </header>
+
+    <main>
+        <div class="input-container">
+            <input type="file" id="imageFiles" accept="image/*" multiple>
+            <button onclick="comprimirImagens()">
+                Comprimir Imagens
+            </button>
+        </div>
+
+        <div id="statusMessage" class="status">
+            Aguardando seleção de arquivos...
+        </div>
+
+        <div id="results" class="results-container">
+            </div>
+    </main>
+
+    <footer>
+        <p>Integração estrutural com iLoveIMG Compress. (Lembre-se do backend!)</p>
+    </footer>
+
+    <script>
+        // ⚠️ ATENÇÃO: ESTE CÓDIGO É ESTRUTURAL E ALTAMENTE INSEGURO PARA PRODUÇÃO.
+        // A SECRET_KEY ESTÁ EXPOSTA NO FRONTEND. USE APENAS PARA DEMONSTRAÇÃO.
+        
+        const statusMessage = document.getElementById('statusMessage');
+        const resultsContainer = document.getElementById('results');
+
+        // --- SUAS CHAVES API INSERIDAS ---
+        const PUBLIC_KEY = "project_public_2719324a45fd2a254fcf7bf250d0975b_YQuCQcc43119d2798163ec722637aab4a1715";
+        // A chave secreta foi inserida aqui. Mude-a imediatamente no seu backend real.
+        const SECRET_KEY = "secret_key_27c9e886bc0d65baf2bc9ed8637e4219_F0Qqca8511bd1e3f19078dbe50ae67b0e44f6"; 
+
+        const API_BASE_URL = "https://api.iloveapi.com/v1/";
+        const TOOL = "compressimage";
+        const REGION = "eu"; 
+
+        /**
+         * Atualiza a mensagem de status na interface.
+         */
+        function updateStatus(text, type = 'default') {
+            statusMessage.textContent = text;
+            statusMessage.className = `status ${type}`;
+        }
+
+        /**
+         * Gera o Token de Autenticação (JWT). 
+         * No frontend, a forma mais fácil de autenticar é pedindo ao servidor iLoveAPI.
+         * Neste exemplo, estamos APENAS SIMULANDO O RETORNO de um token. 
+         * Na prática, você faria uma chamada para o endpoint /v1/auth com sua PUBLIC_KEY
+         * ou (Melhor) seu backend geraria o token usando a SECRET_KEY.
+         */
+        async function getAuthToken() {
+            updateStatus("🔒 Gerando token de autenticação...");
+            // Usando a chave pública para solicitar um token de curta duração (método do cliente)
+            const authPayload = { public_key: PUBLIC_KEY };
+            
+            // Este é o método sugerido pela iLoveAPI para clientes (frontend)
+            const authResponse = await fetch(`${API_BASE_URL}auth`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(authPayload)
+            });
+            
+            if (!authResponse.ok) {
+                const errorData = await authResponse.json();
+                throw new Error(`Falha na autenticação: ${errorData.error || authResponse.statusText}`);
+            }
+            
+            const authData = await authResponse.json();
+            return authData.token; 
+        }
+
+        async function comprimirImagens() {
+            const filesInput = document.getElementById('imageFiles');
+            const files = filesInput.files;
+
+            if (files.length === 0) {
+                updateStatus("❌ Por favor, selecione pelo menos uma imagem.", 'error');
+                return;
+            }
+
+            resultsContainer.innerHTML = '';
+            
+            try {
+                // 0. AUTENTICAÇÃO
+                const token = await getAuthToken();
+                const headers = { 'Authorization': `Bearer ${token}` };
+
+                updateStatus(`🚀 1/3: Iniciando tarefa de ${TOOL}...`);
+                
+                // 1. START (INICIAR TAREFA)
+                const startResponse = await fetch(`${API_BASE_URL}start/${TOOL}/${REGION}`, {
+                    method: 'GET',
+                    headers: headers
+                });
+                const startData = await startResponse.json();
+
+                if (!startResponse.ok || !startData.server) {
+                    throw new Error(`Erro ao iniciar tarefa: ${startData.error || startResponse.statusText}`);
+                }
+                
+                const taskId = startData.task;
+                const serverUrl = `https://${startData.server}/v1/`;
+                updateStatus(`✅ Tarefa iniciada. ID: ${taskId}. Servidor: ${startData.server}`);
+                
+                // 2. UPLOAD (CARREGAR ARQUIVOS)
+                const uploadedFiles = [];
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    updateStatus(`⬆️ 2/3: Carregando arquivo ${i + 1} de ${files.length} (${file.name})...`);
+                    
+                    const formData = new FormData();
+                    formData.append('task', taskId);
+                    formData.append('file', file);
+                    
+                    const uploadResponse = await fetch(`${serverUrl}upload`, {
+                        method: 'POST',
+                        headers: headers,
+                        body: formData
+                    });
+                    const uploadData = await uploadResponse.json();
+                    
+                    if (!uploadResponse.ok || !uploadData.server_filename) {
+                        throw new Error(`Erro no upload do arquivo ${file.name}: ${uploadData.error || uploadResponse.statusText}`);
+                    }
+                    uploadedFiles.push({
+                        server_filename: uploadData.server_filename,
+                        filename: file.name
+                    });
+                }
+                updateStatus(`✅ Todos os ${files.length} arquivos carregados com sucesso.`);
+
+                // 3. PROCESS (PROCESSAR)
+                updateStatus("⚙️ 3/3: Processando compressão (Nível 5 de qualidade)...");
+                
+                // Nível 5 de 1 a 10 é uma compressão intermediária
+                const processPayload = {
+                    task: taskId,
+                    files: uploadedFiles.map(f => ({ server_filename: f.server_filename })),
+                    output_filenamename: 'compressed_batch.zip',
+                    tool_params: {
+                        level: 5 
+                    }
+                };
+
+                const processResponse = await fetch(`${serverUrl}process`, {
+                    method: 'POST',
+                    headers: {
+                        ...headers,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(processPayload)
+                });
+                const processData = await processResponse.json();
+
+                if (!processResponse.ok) {
+                    throw new Error(`Erro no processamento: ${processData.error || processResponse.statusText}`);
+                }
+                
+                // 4. DOWNLOAD (Baixar Resultado)
+                const downloadLink = `${serverUrl}download/${taskId}`; 
+                
+                updateStatus("🎉 Sucesso! Processamento concluído.", 'success');
+
+                resultsContainer.innerHTML = `
+                    <p>Download dos arquivos comprimidos (ZIP):</p>
+                    <a href="${downloadLink}" target="_blank" download="compressed_images.zip">
+                        Clique para Baixar (${files.length} imagens)
+                    </a>
+                `;
+
+            } catch (error) {
+                console.error("Erro na API:", error);
+                updateStatus(`❌ Erro fatal: ${error.message}`, 'error');
+                resultsContainer.innerHTML = '';
+            }
+        }
+    </script>
+</body>
+</html>
